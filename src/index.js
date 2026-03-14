@@ -16,7 +16,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:5173',  // Vite dev server
   'http://localhost:3000',
-  'https://amor-dei-ministries-8nv2g3wxq-madhukumar-munjuluris-projects.vercel.app/'
+  'https://amor-dei-ministries-8nv2g3wxq-madhukumar-munjuluris-projects.vercel.app'
 ].filter(Boolean);
 
 app.use(cors({
