@@ -4,40 +4,44 @@ const Roster   = require('../models/Roster');
 const Interest = require('../models/Interest');
 const Ministry = require('../models/Ministry');
 
-// ── Random assignment engine ──────────────────────────────────────────────
+// ── Random assignment engine (respects ministry limit) ────────────────────
 async function generateAssignments() {
   const ministries = await Ministry.find().sort({ createdAt: 1 });
   const interests  = await Interest.find();
-
-  const used        = new Set();
+  const used       = new Set();
   const assignments = [];
 
   for (const min of ministries) {
-    // Members interested in this ministry who aren't assigned yet
+    const lim = min.limit || 1;
+    // Pool: interested members not yet used elsewhere
     const pool = interests
       .filter(i => i.ministryId.toString() === min._id.toString() && !used.has(i.memberId.toString()))
       .map(i => i.memberId.toString());
 
-    if (pool.length > 0) {
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      used.add(pick);
-      assignments.push({ ministryId: min._id, memberIds: [pick] });
+    // Shuffle pool
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    const picks = pool.slice(0, lim);
+    picks.forEach(p => used.add(p));
+
+    if (picks.length > 0) {
+      assignments.push({ ministryId: min._id, memberIds: picks });
     } else {
-      // Fallback: any interested member even if used elsewhere
+      // Fallback: any interested member
       const fallback = interests
         .filter(i => i.ministryId.toString() === min._id.toString())
         .map(i => i.memberId.toString());
-
       if (fallback.length > 0) {
         const pick = fallback[Math.floor(Math.random() * fallback.length)];
         assignments.push({ ministryId: min._id, memberIds: [pick] });
       } else {
-        // No one interested — leave unassigned
         assignments.push({ ministryId: min._id, memberIds: [] });
       }
     }
   }
-
   return assignments;
 }
 
@@ -98,15 +102,18 @@ router.patch('/:id/add-member', async (req, res) => {
     const roster = await Roster.findById(req.params.id);
     if (!roster) return res.status(404).json({ error: 'Roster not found' });
 
-    const assignment = roster.assignments.find(
-      a => a.ministryId.toString() === ministryId
-    );
+    const assignment = roster.assignments.find(a => a.ministryId.toString() === ministryId);
     if (!assignment) return res.status(404).json({ error: 'Ministry not in roster' });
 
-    // Avoid duplicates
-    if (!assignment.memberIds.map(id => id.toString()).includes(memberId)) {
+    // Check ministry limit
+    const ministry = await Ministry.findById(ministryId);
+    const lim = ministry?.limit || 1;
+    if (assignment.memberIds.length >= lim)
+      return res.status(400).json({ error: `This ministry has a limit of ${lim} person${lim>1?'s':''}` });
+
+    if (!assignment.memberIds.map(id => id.toString()).includes(memberId))
       assignment.memberIds.push(memberId);
-    }
+
     await roster.save();
     res.json(await populateRoster(roster._id));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -122,14 +129,10 @@ router.patch('/:id/remove-member', async (req, res) => {
     const roster = await Roster.findById(req.params.id);
     if (!roster) return res.status(404).json({ error: 'Roster not found' });
 
-    const assignment = roster.assignments.find(
-      a => a.ministryId.toString() === ministryId
-    );
+    const assignment = roster.assignments.find(a => a.ministryId.toString() === ministryId);
     if (!assignment) return res.status(404).json({ error: 'Ministry not in roster' });
 
-    assignment.memberIds = assignment.memberIds.filter(
-      id => id.toString() !== memberId
-    );
+    assignment.memberIds = assignment.memberIds.filter(id => id.toString() !== memberId);
     await roster.save();
     res.json(await populateRoster(roster._id));
   } catch (err) { res.status(500).json({ error: err.message }); }

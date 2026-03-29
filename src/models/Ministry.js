@@ -12,6 +12,12 @@ const MinistrySchema = new mongoose.Schema(
       type: String,
       default: '🙏',
     },
+    limit: {
+      type: Number,
+      default: 1,
+      min: [1, 'Limit must be at least 1'],
+      max: [20, 'Limit cannot exceed 20'],
+    },
   },
   { timestamps: true }
 );
